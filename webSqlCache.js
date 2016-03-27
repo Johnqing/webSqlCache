@@ -6,7 +6,7 @@ const webSQL = {
     initialize: (dbname) => {
         if (cacheDb) {
             cacheDb = window.openDatabase(dbname, "1.0", dbname, 500000);
-            cacheDb.transaction(function (tx) {
+            cacheDb.transaction((tx) => {
                 tx.executeSql(
                     'CREATE TABLE IF NOT EXISTS `cache` (' +
                     '`id` INTEGER PRIMARY KEY, ' +
@@ -25,17 +25,34 @@ const webSQL = {
         if (typeof values === 'undefined') {
             values = [];
         }
-        cacheDb.transaction(function (tx) {
-            tx.executeSql(sql, values, function (tx, results) {
+        cacheDb.transaction((tx) => {
+            tx.executeSql(sql, values, (tx, results) => {
                 if (typeof callback == "function") {
                     callback({success: true, rowsAffected: results.rows.length, data: results});
                 }
-            }, function (tx, error) {
+            }, (tx, error) => {
                 if (typeof callback == "function") {
                     callback({success: false, rowsAffected: 0, data: error});
                 }
             });
         });
+    },
+    set: (url, results, options, json) => {
+        if(results.success === true) {
+            this.query('UPDATE cache SET data=? WHERE url=? AND type=? AND page=?',
+                [JSON.stringify(json), url, options.type, options.page], () => {
+                    console.log('Success update = ' + JSON.stringify(json));
+                });
+        } else {
+            this.query('INSERT INTO cache (url, type, page, data) VALUES(?, ?, ?, ?);',
+                [url, options.type, options.page, JSON.stringify(json)], (results) => {
+                    if(results.success === true) {
+                        console.log('Success update = ' + JSON.stringify(results));
+                    } else {
+                        console.error('Error inserting = ' + results.data);
+                    }
+                });
+        }
     },
     offline: (values, callback) => {
         this.query('SELECT * FROM cache WHERE url=? AND type=? AND page=?;', values, (results) => {
@@ -48,7 +65,7 @@ const webSQL = {
     }
 };
 
-function agent(url, options = {}, getOnline = ()=> {}) {
+function get(url, options = {}, getOnline = ()=> {}) {
     if (!url)
         throw new Error('Please write to URL');
 
@@ -84,7 +101,13 @@ function agent(url, options = {}, getOnline = ()=> {}) {
      * 成功
      * @param json
      */
-    function success(json) => {
+    let success = (json) => {
+        // 保存数据
+        if(options.save == true){
+            webSQL.offline([url, options.type, options.page], (results) => {
+                webSQL.set(url, results, options, json);
+            });
+        }
         if(json.code === 0){
             options.success(json);
         } else {
@@ -96,7 +119,7 @@ function agent(url, options = {}, getOnline = ()=> {}) {
      * http请求失败
      * @param response
      */
-    function error(response) => {
+     let error = (response) => {
         if(options.fail){
             options.offline = true;
             get(url, options);
@@ -120,4 +143,4 @@ function agent(url, options = {}, getOnline = ()=> {}) {
     return getOnline(options, success, error);
 }
 
-export default agent;
+export default get;
