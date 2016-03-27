@@ -4,7 +4,7 @@ let initialized = false;
 
 const webSQL = {
     initialize: (dbname) => {
-        if (cacheDb) {
+        if (!cacheDb) {
             cacheDb = window.openDatabase(dbname, "1.0", dbname, 500000);
             cacheDb.transaction((tx) => {
                 tx.executeSql(
@@ -39,13 +39,13 @@ const webSQL = {
     },
     set: (url, results, options, json) => {
         if(results.success === true) {
-            this.query('UPDATE cache SET data=? WHERE url=? AND type=? AND page=?',
-                [JSON.stringify(json), url, options.type, options.page], () => {
+            webSQL.query('UPDATE cache SET data=? WHERE url=? AND type=? AND page=?',
+                [JSON.stringify(json), url, options.cacheType, options.page], () => {
                     console.log('Success update = ' + JSON.stringify(json));
                 });
         } else {
-            this.query('INSERT INTO cache (url, type, page, data) VALUES(?, ?, ?, ?);',
-                [url, options.type, options.page, JSON.stringify(json)], (results) => {
+            webSQL.query('INSERT INTO cache (url, type, page, data) VALUES(?, ?, ?, ?);',
+                [url, options.cacheType, options.page, JSON.stringify(json)], (results) => {
                     if(results.success === true) {
                         console.log('Success update = ' + JSON.stringify(results));
                     } else {
@@ -55,7 +55,7 @@ const webSQL = {
         }
     },
     offline: (values, callback) => {
-        this.query('SELECT * FROM cache WHERE url=? AND type=? AND page=?;', values, (results) => {
+        webSQL.query('SELECT * FROM cache WHERE url=? AND type=? AND page=?;', values, (results) => {
             if (results.success === true && results.rowsAffected > 0) {
                 callback({success: true, data: JSON.parse(results.data.rows.item(0).data)});
             } else {
@@ -77,6 +77,7 @@ function get(url, options = {}, getOnline = ()=> {}) {
 
     options.type = (options.type || 'get').toUpperCase();
     options.cacheType = options.cacheType || '';
+    options.page = options.page || 1;
     !options.data && (options.data = {});
 
     options.save = options.save || false;
@@ -89,7 +90,7 @@ function get(url, options = {}, getOnline = ()=> {}) {
      * 断网重连
      */
     if (options.offline || !OnLine) {
-        return webSQL.offline([url, options.cacheType, options.page || 1], (results)=> {
+        return webSQL.offline([url, options.cacheType, options.page], (results)=> {
             if (results.success === true) {
                 options.success(results.data);
             } else {
@@ -104,7 +105,7 @@ function get(url, options = {}, getOnline = ()=> {}) {
     let success = (json) => {
         // 保存数据
         if(options.save == true){
-            webSQL.offline([url, options.type, options.page], (results) => {
+            webSQL.offline([url, options.cacheType, options.page], (results) => {
                 webSQL.set(url, results, options, json);
             });
         }
@@ -120,16 +121,16 @@ function get(url, options = {}, getOnline = ()=> {}) {
      * @param response
      */
      let error = (response) => {
-        if(options.fail){
+        if(options.save == true){
             options.offline = true;
             get(url, options);
         }
-        console.log('Ajax Error- url=' + url + ' data=' + JSON.stringify(params) + ' type=' + type);
+        console.error('Ajax Error- url=' + url + ' data=' + JSON.stringify(options) + ' type=' + options.cacheType);
         options.fail && options.fail(response);
     }
 
     // jquery
-    if(!window.jQuery){
+    if(window.jQuery){
         return window.jQuery.ajax({
             type: options.type,
             url: url,
